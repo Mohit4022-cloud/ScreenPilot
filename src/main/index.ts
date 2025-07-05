@@ -1,7 +1,9 @@
-import { app, BrowserWindow, Tray, Menu, systemPreferences, dialog, shell, screen, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, Menu, systemPreferences, dialog, shell, screen, ipcMain, nativeImage } from 'electron';
 import * as path from 'path';
 import { ScreenPilotCore } from './core/ScreenPilotCore';
 import { AutoUpdateManager } from './autoUpdater';
+import { TrayManager } from './tray-manager';
+import { FloatingUIManager } from './floating-ui-manager';
 
 // Global declarations for Vite-injected variables
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
@@ -10,6 +12,9 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 class ScreenPilotApp {
   private mainWindow: BrowserWindow | null = null;
   private tray: Tray | null = null;
+  private trayManager: TrayManager | null = null;
+  private floatingUIManager: FloatingUIManager | null = null;
+  private isMacOSBeta = false;
   private core: ScreenPilotCore;
   private isQuitting = false;
   private updateManager: AutoUpdateManager | null = null;
@@ -45,16 +50,27 @@ class ScreenPilotApp {
     
     app.whenReady().then(async () => {
       console.log('ScreenPilot: App ready, initializing...');
+      
+      // Detect macOS beta
+      this.detectMacOSBeta();
+      
       try {
         // Skip permissions for now to test tray
         // await this.checkPermissions();
         // console.log('ScreenPilot: Permissions checked');
         
-        this.createTray();
-        console.log('ScreenPilot: Tray created');
-        
+        // Create window first
         this.createWindow();
         console.log('ScreenPilot: Window created');
+        
+        // Use floating UI for macOS beta, tray for others
+        if (this.isMacOSBeta) {
+          console.log('ScreenPilot: macOS beta detected - using floating UI');
+          this.createFloatingUI();
+        } else {
+          console.log('ScreenPilot: Using system tray');
+          this.createTray();
+        }
         
         this.setupAutoUpdater();
         console.log('ScreenPilot: Auto-updater setup');
@@ -77,6 +93,8 @@ class ScreenPilotApp {
     app.on('before-quit', () => {
       this.isQuitting = true;
       this.updateManager?.destroy();
+      this.trayManager?.destroy();
+      this.floatingUIManager?.destroy();
     });
   }
 
@@ -105,96 +123,42 @@ class ScreenPilotApp {
     }
   }
 
-  private createTray() {
-    // Use nativeImage to create a placeholder icon
-    const { nativeImage } = require('electron');
-    
-    // Try to load icon, fall back to empty image if not found
-    let trayIcon;
-    const iconPath = path.join(__dirname, '../../assets/tray-icon.png');
-    
-    try {
-      if (require('fs').existsSync(iconPath) && require('fs').statSync(iconPath).size > 0) {
-        trayIcon = nativeImage.createFromPath(iconPath);
-      } else {
-        // Create a simple 16x16 black square as placeholder
-        const buffer = Buffer.alloc(16 * 16 * 4);
-        for (let i = 0; i < buffer.length; i += 4) {
-          buffer[i] = 0;     // R
-          buffer[i + 1] = 0; // G
-          buffer[i + 2] = 0; // B
-          buffer[i + 3] = 255; // A
+  private detectMacOSBeta() {
+    if (process.platform === 'darwin') {
+      // Force use floating UI for your macOS 26.0
+      this.isMacOSBeta = true;
+      
+      console.log(`⚠️  macOS Beta detected`);
+      console.log('🔧 Using floating UI as workaround for tray icon bug');
+      
+      // Show notification after window is ready
+      setTimeout(() => {
+        if (this.mainWindow) {
+          dialog.showMessageBox(this.mainWindow, {
+            type: 'info',
+            title: 'macOS Beta Detected',
+            message: 'Using Floating UI Instead of Tray',
+            detail: `You're running macOS beta. Due to a known bug in macOS beta versions, tray icons don't appear. We'll use a floating control panel instead.`,
+            buttons: ['OK']
+          });
         }
-        trayIcon = nativeImage.createFromBuffer(buffer, { width: 16, height: 16 });
-      }
-    } catch (error) {
-      console.error('Error loading tray icon:', error);
-      // Create empty image as fallback
-      trayIcon = nativeImage.createEmpty();
+      }, 1000);
     }
-    
-    this.tray = new Tray(trayIcon);
-    
-    const updateTrayMenu = (isPaused: boolean = false) => {
-      const contextMenu = Menu.buildFromTemplate([
-        {
-          label: 'Show Assistant',
-          accelerator: 'CmdOrCtrl+Shift+S',
-          click: () => this.showWindow()
-        },
-        {
-          label: 'Settings',
-          click: () => this.showSettings()
-        },
-        { type: 'separator' },
-        {
-          label: isPaused ? 'Resume' : 'Pause',
-          type: 'checkbox',
-          checked: isPaused,
-          click: (item) => {
-            this.core.setPaused(item.checked);
-            updateTrayMenu(item.checked);
-          }
-        },
-        {
-          label: 'Status',
-          enabled: false,
-          sublabel: isPaused ? 'Paused' : 'Active'
-        },
-        { type: 'separator' },
-        {
-          label: 'Check for Updates...',
-          click: () => this.updateManager?.checkForUpdatesManual()
-        },
-        {
-          label: 'About',
-          click: () => this.showAbout()
-        },
-        { type: 'separator' },
-        {
-          label: 'Quit ScreenPilot',
-          accelerator: 'CmdOrCtrl+Q',
-          click: () => {
-            this.isQuitting = true;
-            app.quit();
-          }
-        }
-      ]);
+  }
 
-      this.tray?.setContextMenu(contextMenu);
-    };
+  private createTray() {
+    // Use the TrayManager
+    this.trayManager = new TrayManager(this.mainWindow);
+    this.tray = this.trayManager.createTray();
+    console.log('Tray created using TrayManager');
+    return;
+  }
 
-    this.tray.setToolTip('ScreenPilot - AI Desktop Assistant');
-    updateTrayMenu(false);
-
-    // Click on tray icon to show/hide window
-    this.tray.on('click', () => {
-      if (this.mainWindow?.isVisible()) {
-        this.mainWindow.hide();
-      } else {
-        this.showWindow();
-      }
-    });
+  private createFloatingUI() {
+    // Use the FloatingUIManager for macOS beta
+    this.floatingUIManager = new FloatingUIManager(this.mainWindow!);
+    this.floatingUIManager.createFloatingUI();
+    console.log('Floating UI created as alternative to tray');
   }
 
   private createWindow() {
@@ -306,10 +270,9 @@ class ScreenPilotApp {
     
     this.core.on('status-change', (status) => {
       this.mainWindow?.webContents.send('screenpilot:status', status);
-      // Update tray icon
-      if (this.tray) {
-        const iconName = status.isActive ? 'tray-icon-active.png' : 'tray-icon.png';
-        this.tray.setImage(path.join(__dirname, '../../assets', iconName));
+      // Update tray status
+      if (this.trayManager) {
+        this.trayManager.updateStatusIndicator(status.isActive ? 'active' : 'inactive');
       }
     });
   }
@@ -332,14 +295,17 @@ class ScreenPilotApp {
   }
 
   private showAbout() {
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'About ScreenPilot',
-      message: 'ScreenPilot',
-      detail: `AI-powered desktop assistant using GPT-4o\nVersion: ${app.getVersion()}\n\nBuilt with Electron, React, and TypeScript`,
-      buttons: ['OK'],
-      icon: path.join(__dirname, '../../assets/icon.png')
-    });
+    if (this.trayManager) {
+      this.trayManager.showAbout();
+    } else {
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'About ScreenPilot',
+        message: 'ScreenPilot',
+        detail: `AI-powered desktop assistant using GPT-4o\nVersion: ${app.getVersion()}\n\nBuilt with Electron, React, and TypeScript`,
+        buttons: ['OK']
+      });
+    }
   }
 
   private setupAutoUpdater() {

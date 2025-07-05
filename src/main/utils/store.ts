@@ -1,4 +1,4 @@
-const Store = require('electron-store');
+import Store from 'electron-store';
 
 // Wrapper to ensure type compatibility with legacy code
 export class ElectronStore<T extends Record<string, any> = Record<string, any>> {
