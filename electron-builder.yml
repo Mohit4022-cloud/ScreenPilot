@@ -1,0 +1,61 @@
+# Electron Builder Configuration (Alternative to Forge)
+# This file is optional - use if you prefer electron-builder over forge
+
+appId: com.yourcompany.screenpilot
+productName: ScreenPilot
+copyright: Copyright © 2024 Your Company
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - "**/*"
+  - "!**/*.ts"
+  - "!*.code-workspace"
+  - "!LICENSE.md"
+  - "!package-lock.json"
+  - "!yarn.lock"
+  - "!pnpm-lock.yaml"
+  - "!.editorconfig"
+  - "!.eslintrc*"
+  - "!.prettierrc*"
+  - "!.github"
+  - "!.vscode"
+  - "!src/**/*.spec.ts"
+  - "!src/**/*.test.ts"
+
+mac:
+  category: public.app-category.productivity
+  icon: assets/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  type: distribution
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+
+dmg:
+  title: ${productName} ${version}
+  icon: assets/icon.icns
+  background: assets/dmg-background.png
+  window:
+    width: 600
+    height: 400
+  contents:
+    - x: 150
+      y: 200
+    - x: 450
+      y: 200
+      type: link
+      path: /Applications
+
+afterSign: scripts/notarize.js

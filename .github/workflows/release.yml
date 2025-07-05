@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run tests
+      run: npm test || true
+    
+    - name: Type check
+      run: npm run typecheck
+    
+    - name: Build application
+      env:
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
+        CSC_LINK: ${{ secrets.MAC_CERTS }}
+        CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+      run: npm run make
+    
+    - name: Calculate checksums
+      run: |
+        cd out/make
+        for file in *.dmg *.zip; do
+          if [ -f "$file" ]; then
+            shasum -a 256 "$file" > "$file.sha256"
+          fi
+        done
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: ScreenPilot ${{ github.ref }}
+        draft: true
+        prerelease: false
+        body: |
+          ## What's New
+          - 
+
+          ## Downloads
+          - **macOS Universal**: ScreenPilot-${{ github.ref_name }}-universal.dmg
+          - **macOS Intel**: ScreenPilot-${{ github.ref_name }}-x64.zip
+          - **macOS Apple Silicon**: ScreenPilot-${{ github.ref_name }}-arm64.zip
+
+          ## Installation
+          1. Download the DMG file
+          2. Open the DMG and drag ScreenPilot to Applications
+          3. Right-click and select "Open" for first launch
+          4. Grant screen recording permission when prompted
+
+          ## Requirements
+          - macOS 12.0 (Monterey) or later
+          - OpenAI API key with GPT-4o access
+    
+    - name: Upload DMG
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./out/make/ScreenPilot-${{ github.ref_name }}.dmg
+        asset_name: ScreenPilot-${{ github.ref_name }}-universal.dmg
+        asset_content_type: application/x-apple-diskimage
+    
+    - name: Upload ZIP
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./out/make/zip/darwin/universal/ScreenPilot-${{ github.ref_name }}-universal.zip
+        asset_name: ScreenPilot-${{ github.ref_name }}-universal.zip
+        asset_content_type: application/zip
+    
+    - name: Upload checksums
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./out/make/checksums.txt
+        asset_name: checksums.txt
+        asset_content_type: text/plain

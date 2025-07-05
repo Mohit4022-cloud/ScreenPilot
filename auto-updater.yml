@@ -1,0 +1,27 @@
+# Auto-updater configuration for electron-updater
+provider: github
+owner: screenpilot
+repo: screenpilot-macos
+releaseType: release
+updaterCacheDirName: screenpilot-updater
+
+# Alternative configurations:
+
+# Generic HTTP Server
+# provider: generic
+# url: https://updates.screenpilot.app
+# channel: latest
+
+# S3 Bucket
+# provider: s3
+# bucket: screenpilot-updates
+# region: us-east-1
+# path: /releases
+# acl: private
+
+# Spaces (DigitalOcean)
+# provider: spaces
+# name: screenpilot-updates
+# region: nyc3
+# path: /releases
+# acl: private
